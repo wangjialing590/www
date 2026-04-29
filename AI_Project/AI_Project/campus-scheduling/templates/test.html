@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>测试页面</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container mt-4">
+        <h3>测试API连接</h3>
+        <button onclick="testAPI()" class="btn btn-primary">测试API</button>
+        <div id="result" class="mt-3"></div>
+        
+        <h3 class="mt-4">教师列表</h3>
+        <select id="teacher-select" class="form-select" style="width: 300px;">
+            <option value="">加载中...</option>
+        </select>
+    </div>
+
+    <script>
+        async function testAPI() {
+            const resultDiv = document.getElementById('result');
+            try {
+                const response = await fetch('/api/timetable?view_type=teacher&filter_value=');
+                const data = await response.json();
+                console.log('API响应:', data);
+                
+                if (data.success) {
+                    resultDiv.innerHTML = '<div class="alert alert-success">API连接成功！</div>';
+                    resultDiv.innerHTML += '<p>教师数: ' + data.teachers.length + '</p>';
+                    resultDiv.innerHTML += '<p>班级数: ' + data.classes.length + '</p>';
+                    resultDiv.innerHTML += '<p>教室数: ' + data.classrooms.length + '</p>';
+                    
+                    const select = document.getElementById('teacher-select');
+                    let options = '<option value="">-- 请选择 --</option>';
+                    data.teachers.forEach(teacher => {
+                        options += '<option value="' + teacher + '">' + teacher + '</option>';
+                    });
+                    select.innerHTML = options;
+                } else {
+                    resultDiv.innerHTML = '<div class="alert alert-danger">API返回失败</div>';
+                }
+            } catch (error) {
+                console.error('请求失败:', error);
+                resultDiv.innerHTML = '<div class="alert alert-danger">请求失败: ' + error.message + '</div>';
+            }
+        }
+        
+        window.onload = testAPI;
+    </script>
+</body>
+</html>

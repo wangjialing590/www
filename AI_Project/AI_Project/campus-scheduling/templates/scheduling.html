@@ -1,0 +1,262 @@
+{% extends "base.html" %}
+
+{% block title %}排课 - 校园智能排课系统{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-3">
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0"><i class="bi bi-bar-chart"></i> 数据统计</h5>
+            </div>
+            <div class="card-body">
+                <div class="stat-item mb-3">
+                    <div class="d-flex justify-content-between">
+                        <span><i class="bi bi-person-fill text-primary"></i> 教师</span>
+                        <span id="stat-teachers" class="badge bg-primary">0</span>
+                    </div>
+                </div>
+                <div class="stat-item mb-3">
+                    <div class="d-flex justify-content-between">
+                        <span><i class="bi bi-people-fill text-success"></i> 班级</span>
+                        <span id="stat-classes" class="badge bg-success">0</span>
+                    </div>
+                </div>
+                <div class="stat-item mb-3">
+                    <div class="d-flex justify-content-between">
+                        <span><i class="bi bi-house-fill text-info"></i> 教室</span>
+                        <span id="stat-classrooms" class="badge bg-info">0</span>
+                    </div>
+                </div>
+                <div class="stat-item mb-3">
+                    <div class="d-flex justify-content-between">
+                        <span><i class="bi bi-book-fill text-warning"></i> 课程</span>
+                        <span id="stat-courses" class="badge bg-warning text-dark">0</span>
+                    </div>
+                </div>
+                <div class="stat-item">
+                    <div class="d-flex justify-content-between">
+                        <span><i class="bi bi-list-task text-danger"></i> 任务</span>
+                        <span id="stat-tasks" class="badge bg-danger">0</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6">
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0"><i class="bi bi-gear"></i> 排课进度</h5>
+            </div>
+            <div class="card-body">
+                <div class="progress mb-3" style="height: 30px;">
+                    <div id="progress-bar" class="progress-bar progress-bar-striped progress-bar-animated bg-success"
+                         role="progressbar" style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+                        <span id="progress-text">0%</span>
+                    </div>
+                </div>
+
+                <div class="status-indicator mb-4">
+                    <div class="d-flex align-items-center">
+                        <div id="status-dot" class="status-dot bg-secondary me-2"></div>
+                        <span id="status-text" class="fw-bold">等待中</span>
+                    </div>
+                </div>
+
+                <div class="alert alert-info mb-3">
+                    <small>
+                        <strong>任务进度:</strong> 已安排 <span id="scheduled-count">0</span> / <span id="total-tasks">0</span> 个任务
+                    </small>
+                </div>
+
+                <div class="card bg-light">
+                    <div class="card-header">
+                        <h6 class="mb-0"><i class="bi bi-terminal"></i> 实时日志</h6>
+                    </div>
+                    <div id="log-container" class="card-body logs-container" style="height: 200px; overflow-y: auto;">
+                        <pre id="log-content" class="mb-0 small"></pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-3">
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0"><i class="bi bi-lightning"></i> 操作</h5>
+            </div>
+            <div class="card-body d-grid gap-3">
+                <button id="btn-start" class="btn btn-primary btn-lg" onclick="startScheduling()">
+                    <i class="bi bi-play-fill"></i> 一键排课
+                </button>
+                <button id="btn-stop" class="btn btn-danger btn-lg" onclick="stopScheduling()" disabled>
+                    <i class="bi bi-stop-fill"></i> 中断排课
+                </button>
+                <a href="/timetable" class="btn btn-success btn-lg">
+                    <i class="bi bi-table"></i> 查看课表
+                </a>
+                <button id="btn-export" class="btn btn-outline-success btn-lg" onclick="exportTimetable()" disabled>
+                    <i class="bi bi-download"></i> 导出课表
+                </button>
+            </div>
+        </div>
+
+        <div class="card shadow-sm">
+            <div class="card-header bg-info text-white">
+                <h5 class="mb-0"><i class="bi bi-trophy"></i> 当前最佳</h5>
+            </div>
+            <div class="card-body text-center">
+                <h3 id="best-fitness" class="text-info mb-0">0</h3>
+                <p class="text-muted small mb-0">适应度</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let isScheduling = false;
+let pollingInterval = null;
+
+function addLog(message) {
+    const logContent = document.getElementById('log-content');
+    const timestamp = new Date().toLocaleTimeString();
+    logContent.textContent += '[' + timestamp + '] ' + message + '\n';
+    logContent.scrollTop = logContent.scrollHeight;
+}
+
+function updateProgress(generation, fitness, total, scheduled, totalTasks) {
+    const percentage = Math.round((generation / total) * 100);
+    document.getElementById('progress-bar').style.width = percentage + '%';
+    document.getElementById('progress-text').textContent = percentage + '%';
+    document.getElementById('best-fitness').textContent = fitness;
+    document.getElementById('scheduled-count').textContent = scheduled;
+    document.getElementById('total-tasks').textContent = totalTasks;
+}
+
+function updateStatus(status, message) {
+    const statusDot = document.getElementById('status-dot');
+    const statusText = document.getElementById('status-text');
+    const btnStart = document.getElementById('btn-start');
+    const btnStop = document.getElementById('btn-stop');
+    const btnExport = document.getElementById('btn-export');
+
+    if (status === 'running') {
+        statusDot.className = 'status-dot bg-warning me-2 pulse';
+        statusText.textContent = '排课进行中...';
+        btnStart.disabled = true;
+        btnStop.disabled = false;
+        isScheduling = true;
+    } else if (status === 'completed') {
+        statusDot.className = 'status-dot bg-success me-2';
+        statusText.textContent = '排课完成';
+        btnStart.disabled = false;
+        btnStop.disabled = true;
+        btnExport.disabled = false;
+        isScheduling = false;
+        addLog('排课任务已完成!');
+    } else {
+        statusDot.className = 'status-dot bg-secondary me-2';
+        statusText.textContent = '等待中';
+        btnStart.disabled = false;
+        btnStop.disabled = true;
+        isScheduling = false;
+    }
+}
+
+function startScheduling() {
+    addLog('正在启动排课...');
+    fetch('/api/run-scheduling', {
+        method: 'POST'
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            addLog('排课已启动! 任务数: ' + data.task_count);
+            updateStatus('running');
+            startPolling();
+        } else {
+            addLog('错误: ' + data.message);
+            alert(data.message);
+        }
+    })
+    .catch(error => {
+        addLog('启动失败: ' + error.message);
+    });
+}
+
+function stopScheduling() {
+    addLog('中断排课...');
+    stopPolling();
+    updateStatus('idle');
+}
+
+function startPolling() {
+    pollingInterval = setInterval(pollStatus, 500);
+}
+
+function stopPolling() {
+    if (pollingInterval) {
+        clearInterval(pollingInterval);
+        pollingInterval = null;
+    }
+}
+
+function pollStatus() {
+    fetch('/api/scheduling-status')
+        .then(response => response.json())
+        .then(data => {
+            updateProgress(data.generation, data.best_fitness, data.total_generations, data.scheduled_count, data.task_count);
+            updateStatus(data.status);
+
+            if (data.status === 'completed' || data.status === 'idle') {
+                stopPolling();
+            }
+        })
+        .catch(error => {
+            console.error('轮询错误:', error);
+        });
+}
+
+function exportTimetable() {
+    window.location.href = '/api/export';
+}
+
+function loadStatistics() {
+    fetch('/api/statistics')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                document.getElementById('stat-teachers').textContent = data.statistics.teacher_count || 0;
+                document.getElementById('stat-classes').textContent = data.statistics.class_count || 0;
+                document.getElementById('stat-classrooms').textContent = data.statistics.classroom_count || 0;
+                document.getElementById('stat-courses').textContent = data.statistics.course_count || 0;
+                document.getElementById('stat-tasks').textContent = data.statistics.task_count || 0;
+                document.getElementById('total-tasks').textContent = data.statistics.task_count || 0;
+            }
+        })
+        .catch(() => {});
+}
+
+function checkInitialStatus() {
+    fetch('/api/scheduling-status')
+        .then(response => response.json())
+        .then(data => {
+            updateProgress(data.generation, data.best_fitness, data.total_generations, data.scheduled_count, data.task_count);
+            updateStatus(data.status);
+            if (data.status === 'running') {
+                startPolling();
+            }
+        })
+        .catch(() => {});
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    loadStatistics();
+    checkInitialStatus();
+});
+</script>
+{% endblock %}

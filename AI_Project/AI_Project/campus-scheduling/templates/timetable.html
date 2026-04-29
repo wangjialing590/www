@@ -1,0 +1,255 @@
+{% extends "base.html" %}
+
+{% block title %}课表 - 校园智能排课系统{% endblock %}
+
+{% block content %}
+<div class="card shadow">
+    <div class="card-header bg-primary text-white">
+        <div class="d-flex justify-content-between align-items-center">
+            <h4 class="mb-0"><i class="bi bi-table"></i> 课表查询</h4>
+        </div>
+    </div>
+    <div class="card-body">
+        <ul class="nav nav-tabs mb-4" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="teacher-tab" data-bs-toggle="tab" data-bs-target="#teacher-panel"
+                        type="button" role="tab" onclick="setViewType('teacher')">
+                    <i class="bi bi-person"></i> 教师课表
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="class-tab" data-bs-toggle="tab" data-bs-target="#class-panel"
+                        type="button" role="tab" onclick="setViewType('class')">
+                    <i class="bi bi-people"></i> 班级课表
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="classroom-tab" data-bs-toggle="tab" data-bs-target="#classroom-panel"
+                        type="button" role="tab" onclick="setViewType('classroom')">
+                    <i class="bi bi-house"></i> 教室课表
+                </button>
+            </li>
+        </ul>
+
+        <div class="row mb-4">
+            <div class="col-md-4">
+                <label for="filter-select" class="form-label">请选择:</label>
+                <select id="filter-select" class="form-select" onchange="loadTimetable()">
+                    <option value="">-- 请选择 --</option>
+                </select>
+            </div>
+        </div>
+
+        <div id="timetable-container">
+            <div class="alert alert-info">
+                <i class="bi bi-info-circle"></i> 请选择要查看的教师/班级/教室
+            </div>
+        </div>
+
+        <div id="no-data-message" class="d-none">
+            <div class="alert alert-warning">
+                <i class="bi bi-exclamation-triangle"></i> 暂无排课结果，请先完成排课
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let currentViewType = 'teacher';
+let timetableData = [];
+
+const days = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+const periods = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11'];
+const periodLabels = {
+    '1': '第1节', '2': '第2节', '3': '第3节', '4': '第4节',
+    '5': '第5节', '6': '第6节', '7': '第7节', '8': '第8节',
+    '9': '第9节', '10': '第10节', '11': '第11节'
+};
+
+function setViewType(type) {
+    currentViewType = type;
+    loadFilterOptions();
+}
+
+function loadFilterOptions() {
+    const filterSelect = document.getElementById('filter-select');
+    filterSelect.innerHTML = '<option value="">加载中...</option>';
+
+    const url = '/api/timetable?view_type=' + currentViewType + '&filter_value=';
+
+    fetch(url)
+        .then(response => response.json())
+        .then(data => {
+            console.log('API响应:', data);
+            if (data.success) {
+                let options = '<option value="">-- 请选择 --</option>';
+                let items = [];
+
+                if (currentViewType === 'teacher') {
+                    items = data.teachers || [];
+                } else if (currentViewType === 'class') {
+                    items = data.classes || [];
+                } else if (currentViewType === 'classroom') {
+                    items = data.classrooms || [];
+                }
+
+                console.log('当前类型:', currentViewType, '数据项数:', items.length);
+                
+                items.forEach(item => {
+                    options += '<option value="' + item + '">' + item + '</option>';
+                });
+
+                filterSelect.innerHTML = options;
+            } else {
+                console.log('API返回失败:', data.message);
+                filterSelect.innerHTML = '<option value="">加载失败</option>';
+            }
+        })
+        .catch(error => {
+            console.log('请求失败:', error);
+            filterSelect.innerHTML = '<option value="">加载失败</option>';
+        });
+}
+
+function loadTimetable() {
+    const filterValue = document.getElementById('filter-select').value;
+    const container = document.getElementById('timetable-container');
+    const noDataMessage = document.getElementById('no-data-message');
+
+    if (!filterValue) {
+        container.innerHTML = '<div class="alert alert-info"><i class="bi bi-info-circle"></i> 请选择要查看的教师/班级/教室</div>';
+        return;
+    }
+
+    const url = '/api/timetable?view_type=' + currentViewType + '&filter_value=' + encodeURIComponent(filterValue);
+
+    fetch(url)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.data.length > 0) {
+                timetableData = data.data;
+                renderTimetable(timetableData);
+                container.classList.remove('d-none');
+                noDataMessage.classList.add('d-none');
+            } else {
+                container.innerHTML = '<div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i> 没有找到相关课表</div>';
+            }
+        })
+        .catch(error => {
+            container.innerHTML = '<div class="alert alert-danger"><i class="bi bi-x-circle"></i> 加载失败: ' + error.message + '</div>';
+        });
+}
+
+function renderTimetable(data) {
+    const container = document.getElementById('timetable-container');
+
+    const cellSize = 70;
+    const dayWidth = 130;
+
+    const occupied = {};
+    const merged = {};
+    days.forEach(day => {
+        occupied[day] = {};
+        merged[day] = new Set();
+        periods.forEach(period => {
+            occupied[day][period] = null;
+        });
+    });
+
+    data.forEach(item => {
+        if (item.is_start && item.day !== '周六' && item.day !== '周日') {
+            const startPeriod = item.period;
+            const slots = item.slots_booked;
+            if (!occupied[item.day][startPeriod]) {
+                occupied[item.day][startPeriod] = {
+                    item: item,
+                    slots: slots
+                };
+                const startNum = parseInt(startPeriod);
+                for (let i = 1; i < slots; i++) {
+                    merged[item.day].add(String(startNum + i));
+                }
+            }
+        }
+    });
+
+    let html = '<div class="table-responsive" style="overflow-x: auto;">';
+    html += '<table class="table table-bordered table-hover timetable-table" style="table-layout: fixed; width: ' + (70 + days.length * dayWidth) + 'px;">';
+    html += '<thead class="table-dark">';
+    html += '<tr>';
+    html += '<th style="width: 70px; height: 40px; min-width: 70px; max-width: 70px;" class="text-center align-middle">节次</th>';
+    
+    days.forEach(day => {
+        if (day === '周六' || day === '周日') {
+            html += '<th style="width: ' + dayWidth + 'px; height: 40px; min-width: ' + dayWidth + 'px; max-width: ' + dayWidth + 'px; background-color: #6c757d;" class="text-center align-middle text-white">' + day + '</th>';
+        } else {
+            html += '<th style="width: ' + dayWidth + 'px; height: 40px; min-width: ' + dayWidth + 'px; max-width: ' + dayWidth + 'px;" class="text-center align-middle">' + day + '</th>';
+        }
+    });
+    html += '</tr>';
+    html += '</thead>';
+    html += '<tbody>';
+
+    for (let p = 0; p < periods.length; p++) {
+        const period = periods[p];
+        html += '<tr>';
+        html += '<td style="width: 70px; height: ' + cellSize + 'px; min-width: 70px; max-width: 70px; background-color: #e9ecef;" class="text-center align-middle font-weight-bold">' + periodLabels[period] + '</td>';
+
+        for (let d = 0; d < days.length; d++) {
+            const day = days[d];
+            
+            if (day === '周六' || day === '周日') {
+                html += '<td style="width: ' + dayWidth + 'px; height: ' + cellSize + 'px; min-width: ' + dayWidth + 'px; max-width: ' + dayWidth + 'px; background-color: #f8f9fa;"></td>';
+                continue;
+            }
+
+            if (merged[day].has(period)) {
+                continue;
+            }
+
+            if (occupied[day][period]) {
+                const slot = occupied[day][period];
+                const item = slot.item;
+                const slots = slot.slots;
+                
+                let bgClass = 'bg-success';
+                if (slots === 4) {
+                    bgClass = 'bg-info';
+                } else if (slots === 3) {
+                    bgClass = 'bg-warning';
+                } else if (slots === 2) {
+                    bgClass = 'bg-primary';
+                }
+
+                html += '<td style="width: ' + dayWidth + 'px; min-width: ' + dayWidth + 'px; max-width: ' + dayWidth + 'px; vertical-align: middle !important;" rowspan="' + slots + '" class="' + bgClass + ' text-white p-1 text-center align-middle">';
+                html += '<div style="display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 120px;">';
+                html += '<span style="font-size: 12px; font-weight: bold;">' + item.course + '</span>';
+                html += '<span style="font-size: 11px;">' + item.teacher + '</span>';
+                html += '<span style="font-size: 11px;">' + item.class_name + '</span>';
+                html += '<span style="font-size: 11px;">' + item.classroom + '</span>';
+                html += '<span style="font-size: 11px;">' + item.credits + '课时</span>';
+                html += '<span style="font-size: 11px;">' + item.period_display + '</span>';
+                html += '</div>';
+                html += '</td>';
+            } else {
+                html += '<td style="width: ' + dayWidth + 'px; height: ' + cellSize + 'px; min-width: ' + dayWidth + 'px; max-width: ' + dayWidth + 'px; vertical-align: middle;" class="text-center text-muted">-</td>';
+            }
+        }
+
+        html += '</tr>';
+    }
+
+    html += '</tbody>';
+    html += '</table>';
+    html += '</div>';
+
+    container.innerHTML = html;
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    loadFilterOptions();
+});
+</script>
+{% endblock %}

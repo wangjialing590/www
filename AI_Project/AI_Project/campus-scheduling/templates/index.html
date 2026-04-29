@@ -1,0 +1,180 @@
+{% extends "base.html" %}
+
+{% block title %}首页 - 校园智能排课系统{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-10">
+        <div class="text-center mb-5">
+            <h1 class="display-4 fw-bold text-primary">
+                <i class="bi bi-calendar-check"></i> 校园智能排课系统
+            </h1>
+            <p class="lead text-muted">基于遗传算法的智能排课解决方案</p>
+        </div>
+
+        <div class="card shadow">
+            <div class="card-body p-5">
+                <div id="upload-area" class="upload-area border border-2 border-dashed rounded-4 p-5 text-center mb-4">
+                    <i class="bi bi-cloud-arrow-up display-1 text-primary mb-3"></i>
+                    <h4>拖拽Excel文件到此处</h4>
+                    <p class="text-muted">或者点击下方按钮选择文件</p>
+                    <form id="upload-form" enctype="multipart/form-data">
+                        <input type="file" id="file-input" name="file" accept=".xlsx" class="d-none">
+                        <button type="button" class="btn btn-primary btn-lg mt-3" onclick="document.getElementById('file-input').click()">
+                            <i class="bi bi-folder-open"></i> 选择Excel文件
+                        </button>
+                    </form>
+                </div>
+
+                <div id="upload-status" class="alert alert-info d-none" role="alert"></div>
+
+                <div id="statistics-section" class="d-none">
+                    <h4 class="mb-4"><i class="bi bi-bar-chart"></i> 数据统计</h4>
+                    <div class="row g-4">
+                        <div class="col-md-4 col-lg-2">
+                            <div class="stat-card bg-primary text-white rounded-3 p-3 text-center">
+                                <i class="bi bi-person-fill display-6 mb-2"></i>
+                                <h3 id="stat-teachers" class="mb-1">0</h3>
+                                <p class="mb-0 small">教师</p>
+                            </div>
+                        </div>
+                        <div class="col-md-4 col-lg-2">
+                            <div class="stat-card bg-success text-white rounded-3 p-3 text-center">
+                                <i class="bi bi-people-fill display-6 mb-2"></i>
+                                <h3 id="stat-classes" class="mb-1">0</h3>
+                                <p class="mb-0 small">班级</p>
+                            </div>
+                        </div>
+                        <div class="col-md-4 col-lg-2">
+                            <div class="stat-card bg-info text-white rounded-3 p-3 text-center">
+                                <i class="bi bi-house-fill display-6 mb-2"></i>
+                                <h3 id="stat-classrooms" class="mb-1">0</h3>
+                                <p class="mb-0 small">教室</p>
+                            </div>
+                        </div>
+                        <div class="col-md-4 col-lg-2">
+                            <div class="stat-card bg-warning text-dark rounded-3 p-3 text-center">
+                                <i class="bi bi-book-fill display-6 mb-2"></i>
+                                <h3 id="stat-courses" class="mb-1">0</h3>
+                                <p class="mb-0 small">课程</p>
+                            </div>
+                        </div>
+                        <div class="col-md-4 col-lg-2">
+                            <div class="stat-card bg-danger text-white rounded-3 p-3 text-center">
+                                <i class="bi bi-list-task display-6 mb-2"></i>
+                                <h3 id="stat-tasks" class="mb-1">0</h3>
+                                <p class="mb-0 small">任务</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="text-center mt-5">
+                        <a href="/scheduling" class="btn btn-success btn-lg px-5">
+                            <i class="bi bi-play-fill"></i> 开始排课
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card mt-4 shadow-sm">
+            <div class="card-body">
+                <h5><i class="bi bi-info-circle"></i> 使用说明</h5>
+                <ol class="mb-0">
+                    <li>上传包含5个工作表的Excel文件（教师信息表、班级信息表、教室信息表、课程信息表、教学任务表）</li>
+                    <li>点击"开始排课"按钮启动智能排课算法</li>
+                    <li>排课完成后查看课表并导出结果</li>
+                </ol>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const uploadArea = document.getElementById('upload-area');
+const fileInput = document.getElementById('file-input');
+const uploadForm = document.getElementById('upload-form');
+const uploadStatus = document.getElementById('upload-status');
+const statisticsSection = document.getElementById('statistics-section');
+
+uploadArea.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    uploadArea.classList.add('bg-light');
+});
+
+uploadArea.addEventListener('dragleave', () => {
+    uploadArea.classList.remove('bg-light');
+});
+
+uploadArea.addEventListener('drop', (e) => {
+    e.preventDefault();
+    uploadArea.classList.remove('bg-light');
+    const files = e.dataTransfer.files;
+    if (files.length > 0) {
+        uploadFile(files[0]);
+    }
+});
+
+fileInput.addEventListener('change', () => {
+    if (fileInput.files.length > 0) {
+        uploadFile(fileInput.files[0]);
+    }
+});
+
+function uploadFile(file) {
+    if (!file.name.endsWith('.xlsx')) {
+        showStatus('请上传xlsx格式的文件', 'danger');
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    showStatus('正在上传...', 'info');
+
+    fetch('/api/upload', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showStatus(data.message, 'success');
+            updateStatistics(data.statistics);
+            statisticsSection.classList.remove('d-none');
+        } else {
+            showStatus(data.message, 'danger');
+        }
+    })
+    .catch(error => {
+        showStatus('上传失败: ' + error.message, 'danger');
+    });
+}
+
+function showStatus(message, type) {
+    uploadStatus.textContent = message;
+    uploadStatus.className = 'alert alert-' + type;
+    uploadStatus.classList.remove('d-none');
+}
+
+function updateStatistics(stats) {
+    document.getElementById('stat-teachers').textContent = stats.teacher_count || 0;
+    document.getElementById('stat-classes').textContent = stats.class_count || 0;
+    document.getElementById('stat-classrooms').textContent = stats.classroom_count || 0;
+    document.getElementById('stat-courses').textContent = stats.course_count || 0;
+    document.getElementById('stat-tasks').textContent = stats.task_count || 0;
+}
+
+fetch('/api/statistics')
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            updateStatistics(data.statistics);
+            statisticsSection.classList.remove('d-none');
+        }
+    })
+    .catch(() => {});
+</script>
+{% endblock %}
